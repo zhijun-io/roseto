@@ -1,0 +1,12 @@
+spring:
+  flyway:
+    enabled: true
+
+roseto:
+  management:
+    bootstrap-secret: test-bootstrap-secret
+    jwt-secret: test-management-jwt-secret-at-least-32-bytes
+management:
+  endpoint:
+    health:
+      show-components: always

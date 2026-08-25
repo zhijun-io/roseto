@@ -1,0 +1,296 @@
+openapi: 3.1.0
+info:
+  title: Roseto Phase 0 API
+  version: 0.1.0
+  description: Machine-readable contract for Phase 0 management and OIDC endpoints.
+servers:
+  - url: https://auth.example.com/t/{tenantKey}
+    variables:
+      tenantKey:
+        default: acme
+paths:
+  /.well-known/openid-configuration:
+    get:
+      operationId: getOpenIdConfiguration
+      responses:
+        '200':
+          description: OpenID Provider metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenIdConfiguration'
+  /jwks:
+    get:
+      operationId: getJwks
+      responses:
+        '200':
+          description: JSON Web Key Set
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Jwks'
+  /authorize:
+    get:
+      operationId: authorize
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+        - $ref: '#/components/parameters/RedirectUri'
+        - in: query
+          name: response_type
+          required: true
+          schema: { type: string, enum: [code] }
+        - in: query
+          name: scope
+          required: true
+          schema: { type: string, example: 'openid api:read' }
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+        - in: query
+          name: code_challenge
+          required: true
+          schema: { type: string }
+        - in: query
+          name: code_challenge_method
+          required: true
+          schema: { type: string, enum: [S256] }
+        - in: query
+          name: nonce
+          required: false
+          schema: { type: string }
+      responses:
+        '302': { description: Redirect with authorization code or OAuth error }
+        '400': { $ref: '#/components/responses/OAuthBadRequest' }
+  /token:
+    post:
+      operationId: exchangeAuthorizationCode
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id, code, redirect_uri, code_verifier]
+              properties:
+                grant_type: { type: string, enum: [authorization_code] }
+                client_id: { type: string }
+                code: { type: string }
+                redirect_uri: { type: string, format: uri }
+                code_verifier: { type: string }
+      responses:
+        '200':
+          description: Token response
+          headers:
+            Cache-Control: { schema: { type: string, example: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/OAuthBadRequest' }
+  /userinfo:
+    get:
+      operationId: getUserInfo
+      security: [{ userInfoBearer: [] }]
+      responses:
+        '200':
+          description: Subject claims
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sub]
+                properties: { sub: { type: string } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /logout:
+    get:
+      operationId: logout
+      parameters:
+        - in: query
+          name: id_token_hint
+          schema: { type: string }
+        - in: query
+          name: post_logout_redirect_uri
+          schema: { type: string, format: uri }
+        - in: query
+          name: state
+          schema: { type: string }
+      responses:
+        '302': { description: Validated post-logout redirect }
+        '204': { description: Session revoked without redirect }
+        '400': { $ref: '#/components/responses/OAuthBadRequest' }
+  /api/management/token:
+    post:
+      operationId: issueManagementToken
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [username, password, grant_type]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+                grant_type: { type: string, enum: [password] }
+      responses:
+        '200':
+          description: Management Token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagementTokenResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/tenants:
+    post:
+      operationId: createTenant
+      security: [{ managementBearer: ['tenant:write'] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 256 }
+      responses:
+        '201': { description: Tenant created }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Idempotency or resource conflict }
+  /api/tenants/{tenantId}/applications:
+    post:
+      operationId: createApplication
+      security: [{ managementBearer: ['application:write'] }]
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationCreateRequest'
+      responses:
+        '201': { description: Application created }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/tenants/{tenantId}/users:
+    post:
+      operationId: createUser
+      security: [{ managementBearer: ['user:write'] }]
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+      responses:
+        '201': { description: User created }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/tenants/{tenantId}/resources:
+    post:
+      operationId: createResource
+      security: [{ managementBearer: ['resource:write'] }]
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201': { description: Resource created }
+  /api/tenants/{tenantId}/permissions:
+    post:
+      operationId: createPermission
+      security: [{ managementBearer: ['resource:write'] }]
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '201': { description: Permission catalog entry created }
+components:
+  parameters:
+    ClientId:
+      in: query
+      name: client_id
+      required: true
+      schema: { type: string }
+    RedirectUri:
+      in: query
+      name: redirect_uri
+      required: true
+      schema: { type: string, format: uri }
+  securitySchemes:
+    userInfoBearer: { type: http, scheme: bearer, bearerFormat: JWT }
+    managementBearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    OpenIdConfiguration:
+      type: object
+      required: [issuer, authorization_endpoint, token_endpoint, userinfo_endpoint, jwks_uri]
+      properties:
+        issuer: { type: string, format: uri }
+        authorization_endpoint: { type: string, format: uri }
+        token_endpoint: { type: string, format: uri }
+        userinfo_endpoint: { type: string, format: uri }
+        jwks_uri: { type: string, format: uri }
+    Jwks:
+      type: object
+      required: [keys]
+      properties:
+        keys: { type: array, items: { type: object } }
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, id_token]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer, example: 300 }
+        scope: { type: string }
+        id_token: { type: string }
+    ManagementTokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, scope]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, enum: [Bearer] }
+        expires_in: { type: integer, example: 900 }
+        scope: { type: string }
+    ApplicationCreateRequest:
+      type: object
+      required: [name, type, redirectUris, resourceIndicator]
+      properties:
+        name: { type: string, maxLength: 256 }
+        type: { type: string, enum: [web] }
+        redirectUris: { type: array, items: { type: string, format: uri }, minItems: 1 }
+        resourceIndicator: { type: string, format: uri }
+    UserCreateRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 12 }
+  responses:
+    OAuthBadRequest:
+      description: OAuth request error
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: { type: string }
+              error_description: { type: string }
+    Unauthorized:
+      description: Authentication missing or invalid
+    Forbidden:
+      description: Authenticated but not authorized

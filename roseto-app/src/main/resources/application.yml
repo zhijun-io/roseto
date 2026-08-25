@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: roseto
+server:
+  port: 3000
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+roseto:
+  management:
+    bootstrap-secret: ${ROSETO_MANAGEMENT_BOOTSTRAP_SECRET}
+    jwt-secret: ${ROSETO_MANAGEMENT_JWT_SECRET}
+
+mybatis-plus:
+  type-handlers-package: io.zhijun.roseto.infrastructure.persistence
